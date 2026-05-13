@@ -9,6 +9,7 @@ import NewFSC from './pages/NewFSC'
 import FSCDetail from './pages/FSCDetail'
 import MyRequests from './pages/MyRequests'
 import Pending from './pages/Pending'
+import Settings from './pages/Settings'
 import { FSCProvider } from './stores/use-fsc-store'
 
 const App = () => (
@@ -24,10 +25,7 @@ const App = () => (
             <Route path="/fsc/:id" element={<FSCDetail />} />
             <Route path="/my-requests" element={<MyRequests />} />
             <Route path="/pending" element={<Pending />} />
-            <Route
-              path="/settings"
-              element={<div className="p-8">Configurações (Em desenvolvimento)</div>}
-            />
+            <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
