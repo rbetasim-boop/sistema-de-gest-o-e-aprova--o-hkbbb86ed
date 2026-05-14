@@ -20,8 +20,8 @@ migrate(
       fields: [
         { name: 'name', type: 'text', required: true },
         { name: 'category', type: 'text' },
-        { name: 'min_amount', type: 'number', required: true },
-        { name: 'max_amount', type: 'number', required: true },
+        { name: 'min_amount', type: 'number' },
+        { name: 'max_amount', type: 'number' },
         {
           name: 'approver',
           type: 'relation',
