@@ -1,5 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApprovalLimits } from '@/components/settings/ApprovalLimits'
+import { UserManagement } from '@/components/settings/UserManagement'
 
 export default function Settings() {
   return (
@@ -24,12 +25,8 @@ export default function Settings() {
         <TabsContent value="alcadas" className="m-0">
           <ApprovalLimits />
         </TabsContent>
-        <TabsContent
-          value="usuarios"
-          className="p-8 border rounded-xl bg-card shadow-sm text-center"
-        >
-          <h3 className="text-lg font-medium">Gestão de Usuários</h3>
-          <p className="text-sm text-muted-foreground mt-2">Em desenvolvimento.</p>
+        <TabsContent value="usuarios" className="m-0">
+          <UserManagement />
         </TabsContent>
       </Tabs>
     </div>
