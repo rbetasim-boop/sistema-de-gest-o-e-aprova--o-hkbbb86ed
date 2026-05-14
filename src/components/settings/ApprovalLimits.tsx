@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,71 +40,67 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
+import { useRealtime } from '@/hooks/use-realtime'
+import { getRules, createRule, updateRule, deleteRule } from '@/services/approval_rules'
+import { getUsers } from '@/services/users'
+import { extractFieldErrors } from '@/lib/pocketbase/errors'
 
-type Rule = {
-  id: string
-  name: string
-  category: string
-  min: number
-  max: number
-  approver: string
-  active: boolean
-}
-
-const CATEGORIES = ['Todos', 'Eventos', 'Serviços', 'Materiais', 'TI', 'Marketing']
-const ROLES = ['Gerente de Departamento', 'Diretor', 'CFO', 'CEO', 'Financeiro']
+const CATEGORIES = ['Todos', 'Eventos', 'Serviços', 'Materiais', 'TI', 'Marketing', 'Geral']
 
 export function ApprovalLimits() {
-  const [rules, setRules] = useState<Rule[]>([
-    {
-      id: '1',
-      name: 'Compras Menores TI',
-      category: 'TI',
-      min: 0,
-      max: 5000,
-      approver: 'Gerente de Departamento',
-      active: true,
-    },
-    {
-      id: '2',
-      name: 'Serviços Especializados',
-      category: 'Serviços',
-      min: 5001,
-      max: 50000,
-      approver: 'Diretor',
-      active: true,
-    },
-    {
-      id: '3',
-      name: 'Grandes Eventos',
-      category: 'Eventos',
-      min: 50001,
-      max: 9999999,
-      approver: 'CFO',
-      active: false,
-    },
-  ])
+  const [rules, setRules] = useState<any[]>([])
+  const [users, setUsers] = useState<any[]>([])
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingRule, setEditingRule] = useState<Rule | null>(null)
+  const [editingRule, setEditingRule] = useState<any | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const { toast } = useToast()
 
-  const [formData, setFormData] = useState<Partial<Rule>>({})
+  const [formData, setFormData] = useState<any>({})
+
+  const loadData = async () => {
+    try {
+      const [r, u] = await Promise.all([getRules(), getUsers()])
+      setRules(r)
+      setUsers(u)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+  useRealtime('approval_rules', () => {
+    loadData()
+  })
+  useRealtime('users', () => {
+    loadData()
+  })
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
   }
 
-  const handleOpenDialog = (rule?: Rule) => {
+  const handleOpenDialog = (rule?: any) => {
+    setFieldErrors({})
     if (rule) {
       setEditingRule(rule)
-      setFormData(rule)
+      setFormData({
+        name: rule.name,
+        category: rule.category,
+        min_amount: rule.min_amount,
+        max_amount: rule.max_amount,
+        approver: rule.approver,
+        active: rule.active,
+      })
     } else {
       setEditingRule(null)
       setFormData({
         name: '',
         category: '',
-        min: 0,
-        max: 0,
+        min_amount: 0,
+        max_amount: 0,
         approver: '',
         active: true,
       })
@@ -112,50 +108,48 @@ export function ApprovalLimits() {
     setIsDialogOpen(true)
   }
 
-  const handleSave = () => {
-    if (
-      !formData.name ||
-      !formData.category ||
-      formData.min === undefined ||
-      formData.max === undefined ||
-      !formData.approver
-    ) {
-      toast({
-        title: 'Erro',
-        description: 'Preencha todos os campos obrigatórios.',
-        variant: 'destructive',
-      })
+  const handleSave = async () => {
+    setFieldErrors({})
+
+    if (formData.max_amount < formData.min_amount) {
+      setFieldErrors({ max_amount: 'O valor máximo não pode ser menor que o valor mínimo.' })
       return
     }
 
-    if (formData.max < formData.min) {
-      toast({
-        title: 'Erro',
-        description: 'O valor máximo não pode ser menor que o valor mínimo.',
-        variant: 'destructive',
-      })
-      return
+    try {
+      if (editingRule) {
+        await updateRule(editingRule.id, formData)
+        toast({ title: 'Sucesso', description: 'Regra atualizada com sucesso.' })
+      } else {
+        await createRule(formData)
+        toast({ title: 'Sucesso', description: 'Regra criada com sucesso.' })
+      }
+      setIsDialogOpen(false)
+    } catch (err) {
+      const errors = extractFieldErrors(err)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      } else {
+        toast({ title: 'Erro', description: 'Erro ao salvar a regra.', variant: 'destructive' })
+      }
     }
-
-    if (editingRule) {
-      setRules(
-        rules.map((r) => (r.id === editingRule.id ? ({ ...formData, id: r.id } as Rule) : r)),
-      )
-      toast({ title: 'Sucesso', description: 'Regra atualizada com sucesso.' })
-    } else {
-      setRules([...rules, { ...formData, id: Math.random().toString(36).substr(2, 9) } as Rule])
-      toast({ title: 'Sucesso', description: 'Regra criada com sucesso.' })
-    }
-    setIsDialogOpen(false)
   }
 
-  const handleDelete = (id: string) => {
-    setRules(rules.filter((r) => r.id !== id))
-    toast({ title: 'Sucesso', description: 'Regra excluída com sucesso.' })
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteRule(id)
+      toast({ title: 'Sucesso', description: 'Regra excluída com sucesso.' })
+    } catch (err) {
+      toast({ title: 'Erro', description: 'Erro ao excluir a regra.', variant: 'destructive' })
+    }
   }
 
-  const toggleStatus = (id: string) => {
-    setRules(rules.map((r) => (r.id === id ? { ...r, active: !r.active } : r)))
+  const toggleStatus = async (rule: any) => {
+    try {
+      await updateRule(rule.id, { active: !rule.active })
+    } catch (err) {
+      toast({ title: 'Erro', description: 'Erro ao atualizar status.', variant: 'destructive' })
+    }
   }
 
   return (
@@ -186,13 +180,17 @@ export function ApprovalLimits() {
               <Label htmlFor="name" className="text-right">
                 Nome
               </Label>
-              <Input
-                id="name"
-                value={formData.name || ''}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="col-span-3"
-                placeholder="Ex: Compras Menores TI"
-              />
+              <div className="col-span-3">
+                <Input
+                  id="name"
+                  value={formData.name || ''}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Ex: Compras Menores TI"
+                />
+                {fieldErrors.name && (
+                  <span className="text-xs text-destructive mt-1 block">{fieldErrors.name}</span>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="category" className="text-right">
@@ -214,40 +212,63 @@ export function ApprovalLimits() {
                     ))}
                   </SelectContent>
                 </Select>
+                {fieldErrors.category && (
+                  <span className="text-xs text-destructive mt-1 block">
+                    {fieldErrors.category}
+                  </span>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="min" className="text-right">
+              <Label htmlFor="min_amount" className="text-right">
                 Valor Mín
               </Label>
-              <div className="col-span-3 relative">
-                <span className="absolute left-3 top-2.5 text-muted-foreground text-sm font-medium">
-                  R$
-                </span>
-                <Input
-                  id="min"
-                  type="number"
-                  value={formData.min ?? ''}
-                  onChange={(e) => setFormData({ ...formData, min: Number(e.target.value) })}
-                  className="pl-9"
-                />
+              <div className="col-span-3">
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-muted-foreground text-sm font-medium">
+                    R$
+                  </span>
+                  <Input
+                    id="min_amount"
+                    type="number"
+                    value={formData.min_amount ?? ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, min_amount: Number(e.target.value) })
+                    }
+                    className="pl-9"
+                  />
+                </div>
+                {fieldErrors.min_amount && (
+                  <span className="text-xs text-destructive mt-1 block">
+                    {fieldErrors.min_amount}
+                  </span>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="max" className="text-right">
+              <Label htmlFor="max_amount" className="text-right">
                 Valor Máx
               </Label>
-              <div className="col-span-3 relative">
-                <span className="absolute left-3 top-2.5 text-muted-foreground text-sm font-medium">
-                  R$
-                </span>
-                <Input
-                  id="max"
-                  type="number"
-                  value={formData.max ?? ''}
-                  onChange={(e) => setFormData({ ...formData, max: Number(e.target.value) })}
-                  className="pl-9"
-                />
+              <div className="col-span-3">
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-muted-foreground text-sm font-medium">
+                    R$
+                  </span>
+                  <Input
+                    id="max_amount"
+                    type="number"
+                    value={formData.max_amount ?? ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, max_amount: Number(e.target.value) })
+                    }
+                    className="pl-9"
+                  />
+                </div>
+                {fieldErrors.max_amount && (
+                  <span className="text-xs text-destructive mt-1 block">
+                    {fieldErrors.max_amount}
+                  </span>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
@@ -260,16 +281,21 @@ export function ApprovalLimits() {
                   onValueChange={(val) => setFormData({ ...formData, approver: val })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o aprovador responsável" />
+                    <SelectValue placeholder="Selecione o aprovador" />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLES.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        {role}
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.name || user.email}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {fieldErrors.approver && (
+                  <span className="text-xs text-destructive mt-1 block">
+                    {fieldErrors.approver}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -289,11 +315,11 @@ export function ApprovalLimits() {
           </div>
           <h3 className="text-lg font-medium">Nenhuma regra definida</h3>
           <p className="text-sm text-muted-foreground mt-1 mb-6 max-w-sm">
-            Crie regras de alçada para controlar quem pode aprovar solicitações de compra e
-            contratações baseadas em faixas de valor.
+            Crie regras de alçada para controlar quem pode aprovar solicitações baseadas em faixas
+            de valor.
           </p>
           <Button onClick={() => handleOpenDialog()}>
-            <Plus className="mr-2 h-4 w-4" /> Add New Rule
+            <Plus className="mr-2 h-4 w-4" /> Nova Regra
           </Button>
         </div>
       ) : (
@@ -316,24 +342,21 @@ export function ApprovalLimits() {
                     <TableCell className="font-medium text-foreground">{rule.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="font-normal">
-                        {rule.category}
+                        {rule.category || '-'}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap text-sm">
-                      {formatCurrency(rule.min)} -{' '}
-                      {rule.max >= 9999999 ? 'Sem limite' : formatCurrency(rule.max)}
+                      {formatCurrency(rule.min_amount)} -{' '}
+                      {rule.max_amount >= 9999999 ? 'Sem limite' : formatCurrency(rule.max_amount)}
                     </TableCell>
                     <TableCell>
                       <span className="inline-flex items-center rounded-md bg-secondary/10 px-2 py-1 text-xs font-medium text-secondary-foreground ring-1 ring-inset ring-secondary/20">
-                        {rule.approver}
+                        {users.find((u) => u.id === rule.approver)?.name || 'Desconhecido'}
                       </span>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Switch
-                          checked={rule.active}
-                          onCheckedChange={() => toggleStatus(rule.id)}
-                        />
+                        <Switch checked={rule.active} onCheckedChange={() => toggleStatus(rule)} />
                         <span className="text-sm text-muted-foreground hidden sm:inline-block">
                           {rule.active ? 'Ativo' : 'Inativo'}
                         </span>

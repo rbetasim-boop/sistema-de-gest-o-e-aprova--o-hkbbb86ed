@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus, Pencil, Trash2, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -46,8 +46,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { toast } from '@/hooks/use-toast'
+import { useRealtime } from '@/hooks/use-realtime'
+import { getUsers, createUser, updateUser, deleteUser } from '@/services/users'
+import { extractFieldErrors } from '@/lib/pocketbase/errors'
 
 const ROLES = [
   'Solicitante',
@@ -58,65 +60,38 @@ const ROLES = [
   'Administrador do Sistema',
 ] as const
 
-type Role = (typeof ROLES)[number]
-
-interface User {
-  id: string
-  name: string
-  email: string
-  department: string
-  role: Role
-}
-
 const formSchema = z.object({
   name: z.string().min(1, 'O nome é obrigatório'),
   email: z.string().email('Email inválido'),
   department: z.string().optional(),
-  role: z.enum(ROLES, {
-    required_error: 'O perfil é obrigatório',
-  }),
+  role: z.enum(ROLES, { required_error: 'O perfil é obrigatório' }),
 })
 
-const initialUsers: User[] = [
-  {
-    id: '1',
-    name: 'João Silva',
-    email: 'joao.silva@empresa.com',
-    department: 'TI',
-    role: 'Administrador do Sistema',
-  },
-  {
-    id: '2',
-    name: 'Maria Souza',
-    email: 'maria.souza@empresa.com',
-    department: 'RH',
-    role: 'Solicitante',
-  },
-  {
-    id: '3',
-    name: 'Carlos Santos',
-    email: 'carlos.santos@empresa.com',
-    department: 'Compras',
-    role: 'Compras / Administrativo',
-  },
-]
-
 export function UserManagement() {
-  const [users, setUsers] = useState<User[]>(initialUsers)
-
+  const [users, setUsers] = useState<any[]>([])
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
-  const [userToEdit, setUserToEdit] = useState<User | null>(null)
-  const [userToDelete, setUserToDelete] = useState<User | null>(null)
+  const [userToEdit, setUserToEdit] = useState<any | null>(null)
+  const [userToDelete, setUserToDelete] = useState<any | null>(null)
+
+  const loadData = async () => {
+    try {
+      setUsers(await getUsers())
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+  useRealtime('users', () => {
+    loadData()
+  })
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      name: '',
-      email: '',
-      department: '',
-      role: undefined,
-    },
+    defaultValues: { name: '', email: '', department: '', role: undefined },
   })
 
   const openAddForm = () => {
@@ -125,41 +100,54 @@ export function UserManagement() {
     setIsFormOpen(true)
   }
 
-  const openEditForm = (user: User) => {
+  const openEditForm = (user: any) => {
     setUserToEdit(user)
     form.reset({
-      name: user.name,
+      name: user.name || '',
       email: user.email,
       department: user.department || '',
-      role: user.role,
+      role: (user.role as any) || 'Solicitante',
     })
     setIsFormOpen(true)
   }
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
-    if (userToEdit) {
-      setUsers(
-        users.map((u) =>
-          u.id === userToEdit.id ? { ...u, ...values, department: values.department || '' } : u,
-        ),
-      )
-      toast({ title: 'Usuário atualizado com sucesso.' })
-    } else {
-      const newUser: User = {
-        id: Math.random().toString(36).substring(7),
-        ...values,
-        department: values.department || '',
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    try {
+      if (userToEdit) {
+        await updateUser(userToEdit.id, values)
+        toast({ title: 'Usuário atualizado com sucesso.' })
+      } else {
+        await createUser(values)
+        toast({
+          title: 'Usuário adicionado com sucesso.',
+          description: 'Senha padrão: Skip@Pass123',
+        })
       }
-      setUsers([...users, newUser])
-      toast({ title: 'Usuário adicionado com sucesso.' })
+      setIsFormOpen(false)
+    } catch (err) {
+      const errors = extractFieldErrors(err)
+      if (Object.keys(errors).length > 0) {
+        Object.entries(errors).forEach(([key, value]) => {
+          form.setError(key as any, { message: value })
+        })
+      } else {
+        toast({
+          title: 'Erro',
+          description: 'Ocorreu um erro ao salvar o usuário.',
+          variant: 'destructive',
+        })
+      }
     }
-    setIsFormOpen(false)
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (userToDelete) {
-      setUsers(users.filter((u) => u.id !== userToDelete.id))
-      toast({ title: 'Usuário removido com sucesso.' })
+      try {
+        await deleteUser(userToDelete.id)
+        toast({ title: 'Usuário removido com sucesso.' })
+      } catch (err) {
+        toast({ title: 'Erro', description: 'Erro ao remover o usuário.', variant: 'destructive' })
+      }
       setIsDeleteOpen(false)
       setUserToDelete(null)
     }
@@ -167,15 +155,6 @@ export function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <Alert variant="default" className="bg-amber-50 text-amber-900 border-amber-200">
-        <AlertCircle className="h-4 w-4 text-amber-600" />
-        <AlertTitle className="text-amber-800">Atenção</AlertTitle>
-        <AlertDescription className="text-amber-700">
-          Como não há um banco de dados conectado no momento, os dados dos usuários são temporários
-          e serão perdidos ao recarregar a página.
-        </AlertDescription>
-      </Alert>
-
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold">Usuários do Sistema</h2>
@@ -184,12 +163,11 @@ export function UserManagement() {
           </p>
         </div>
         <Button onClick={openAddForm}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Usuário
+          <Plus className="mr-2 h-4 w-4" /> Novo Usuário
         </Button>
       </div>
 
-      <div className="border rounded-xl bg-card overflow-hidden">
+      <div className="border rounded-xl bg-card overflow-hidden shadow-sm">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
@@ -210,10 +188,10 @@ export function UserManagement() {
             ) : (
               users.map((user) => (
                 <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
+                  <TableCell className="font-medium">{user.name || '-'}</TableCell>
                   <TableCell className="text-muted-foreground">{user.email}</TableCell>
                   <TableCell>{user.department || '-'}</TableCell>
-                  <TableCell>{user.role}</TableCell>
+                  <TableCell>{user.role || '-'}</TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"
@@ -274,7 +252,12 @@ export function UserManagement() {
                   <FormItem>
                     <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input placeholder="email@empresa.com" type="email" {...field} />
+                      <Input
+                        placeholder="email@empresa.com"
+                        type="email"
+                        {...field}
+                        disabled={!!userToEdit}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -337,8 +320,10 @@ export function UserManagement() {
             <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta ação não pode ser desfeita. Isso removerá permanentemente o usuário{' '}
-              <span className="font-semibold text-foreground">{userToDelete?.name}</span> do
-              sistema.
+              <span className="font-semibold text-foreground">
+                {userToDelete?.name || userToDelete?.email}
+              </span>
+              .
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

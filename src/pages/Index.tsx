@@ -1,4 +1,4 @@
-import { useFSCStore } from '@/stores/use-fsc-store'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -12,19 +12,44 @@ import { Button } from '@/components/ui/button'
 import { Eye, Edit, Clock, FileText, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { StatusBadge } from '@/components/StatusBadge'
-import { formatCurrency, formatDate } from '@/lib/date-utils'
+import { useRealtime } from '@/hooks/use-realtime'
+import { getRequests } from '@/services/requests'
 
 export default function Index() {
-  const { fscs } = useFSCStore()
+  const [fscs, setFscs] = useState<any[]>([])
+
+  const loadData = async () => {
+    try {
+      const data = await getRequests()
+      setFscs(data)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+  useRealtime('requests', () => {
+    loadData()
+  })
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
+  const formatDate = (date: string) => new Date(date).toLocaleDateString('pt-BR')
 
   const totalEmAprovacao = fscs
-    .filter((f) => f.status.includes('Aprovação') || f.status.includes('Pendente'))
-    .reduce((acc, f) => acc + f.totalValue, 0)
+    .filter((f) => f.status === 'pending')
+    .reduce((acc, f) => acc + f.amount, 0)
 
-  const pendentes = fscs.filter(
-    (f) => f.status.includes('Aprovação') || f.status.includes('Pendente'),
-  ).length
-  const aprovados = fscs.filter((f) => f.status === 'Aprovado').length
+  const pendentes = fscs.filter((f) => f.status === 'pending').length
+  const aprovados = fscs.filter((f) => f.status === 'approved').length
+
+  const getStatusMapped = (status: string) => {
+    if (status === 'pending') return 'Pendente'
+    if (status === 'approved') return 'Aprovado'
+    return 'Devolvido'
+  }
 
   return (
     <div className="space-y-6">
@@ -102,33 +127,39 @@ export default function Index() {
             <Table>
               <TableHeader className="bg-accent">
                 <TableRow>
-                  <TableHead>FSC No.</TableHead>
-                  <TableHead>Evento</TableHead>
+                  <TableHead>No.</TableHead>
+                  <TableHead>Título</TableHead>
                   <TableHead>Solicitante</TableHead>
                   <TableHead className="text-right">Valor Total</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Data Limite</TableHead>
+                  <TableHead>Data Criação</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {fscs.map((fsc) => (
                   <TableRow key={fsc.id} className="hover:bg-accent/50 transition-colors">
-                    <TableCell className="font-medium text-primary">{fsc.fscNo}</TableCell>
-                    <TableCell>{fsc.eventName}</TableCell>
-                    <TableCell className="text-muted-foreground">{fsc.requester}</TableCell>
+                    <TableCell className="font-medium text-primary uppercase">
+                      {fsc.id.slice(0, 8)}
+                    </TableCell>
+                    <TableCell>{fsc.title}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fsc.expand?.requester?.name ||
+                        fsc.expand?.requester?.email ||
+                        'Desconhecido'}
+                    </TableCell>
                     <TableCell className="text-right font-medium">
-                      {formatCurrency(fsc.totalValue)}
+                      {formatCurrency(fsc.amount)}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={fsc.status} />
+                      <StatusBadge status={getStatusMapped(fsc.status)} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDate(fsc.deadline)}
+                      {formatDate(fsc.created)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        {(fsc.status === 'Rascunho' || fsc.status === 'Devolvido') && (
+                        {fsc.status === 'pending' && (
                           <Button
                             variant="ghost"
                             size="icon"
