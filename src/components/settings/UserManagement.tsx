@@ -60,12 +60,33 @@ const ROLES = [
   'Administrador do Sistema',
 ] as const
 
-const formSchema = z.object({
-  name: z.string().min(1, 'O nome é obrigatório'),
-  email: z.string().email('Email inválido'),
-  department: z.string().optional(),
-  role: z.enum(ROLES, { required_error: 'O perfil é obrigatório' }),
-})
+const formSchema = z
+  .object({
+    name: z.string().min(1, 'O nome é obrigatório'),
+    email: z.string().email('Email inválido'),
+    department: z.string().optional(),
+    role: z.enum(ROLES, { required_error: 'O perfil é obrigatório' }),
+    password: z.string().optional(),
+    passwordConfirm: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.password && data.password.length > 0) {
+      if (data.password.length < 8) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'A senha deve ter no mínimo 8 caracteres',
+          path: ['password'],
+        })
+      }
+      if (data.password !== data.passwordConfirm) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'As senhas não coincidem',
+          path: ['passwordConfirm'],
+        })
+      }
+    }
+  })
 
 export function UserManagement() {
   const [users, setUsers] = useState<any[]>([])
@@ -96,7 +117,14 @@ export function UserManagement() {
 
   const openAddForm = () => {
     setUserToEdit(null)
-    form.reset({ name: '', email: '', department: '', role: undefined })
+    form.reset({
+      name: '',
+      email: '',
+      department: '',
+      role: undefined,
+      password: '',
+      passwordConfirm: '',
+    })
     setIsFormOpen(true)
   }
 
@@ -107,11 +135,20 @@ export function UserManagement() {
       email: user.email,
       department: user.department || '',
       role: (user.role as any) || 'Solicitante',
+      password: '',
+      passwordConfirm: '',
     })
     setIsFormOpen(true)
   }
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    if (!userToEdit && (!values.password || values.password.length < 8)) {
+      form.setError('password', {
+        message: 'A senha é obrigatória e deve ter no mínimo 8 caracteres',
+      })
+      return
+    }
+
     try {
       if (userToEdit) {
         await updateUser(userToEdit.id, values)
@@ -120,7 +157,6 @@ export function UserManagement() {
         await createUser(values)
         toast({
           title: 'Usuário adicionado com sucesso.',
-          description: 'Senha padrão: Skip@Pass123',
         })
       }
       setIsFormOpen(false)
@@ -227,6 +263,7 @@ export function UserManagement() {
             <DialogTitle>{userToEdit ? 'Editar Usuário' : 'Novo Usuário'}</DialogTitle>
             <DialogDescription>
               Preencha os dados do usuário. Clique em salvar quando terminar.
+              {userToEdit && ' Para manter a senha atual, deixe os campos de senha em branco.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -303,6 +340,39 @@ export function UserManagement() {
                   </FormItem>
                 )}
               />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Senha{' '}
+                        {userToEdit && (
+                          <span className="text-muted-foreground font-normal">(Opcional)</span>
+                        )}
+                      </FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="••••••••" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="passwordConfirm"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Confirmar Senha</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="••••••••" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               <DialogFooter className="pt-4">
                 <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>
                   Cancelar

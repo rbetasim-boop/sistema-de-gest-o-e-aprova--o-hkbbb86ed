@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-05-14T11:53:42.725Z",
+  "generatedAt": "2026-05-23T14:41:49.733Z",
   "collections": [
     {
       "name": "users",
       "type": "auth",
       "apiRules": {
-        "list": "id = @request.auth.id",
-        "view": "id = @request.auth.id",
-        "create": "",
-        "update": "id = @request.auth.id",
-        "delete": "id = @request.auth.id"
+        "list": "id = @request.auth.id || @request.auth.role = 'Administrador do Sistema'",
+        "view": "id = @request.auth.id || @request.auth.role = 'Administrador do Sistema'",
+        "create": "@request.auth.role = 'Administrador do Sistema'",
+        "update": "id = @request.auth.id || @request.auth.role = 'Administrador do Sistema'",
+        "delete": "id = @request.auth.id || @request.auth.role = 'Administrador do Sistema'"
       },
       "fields": [
         {
@@ -29,19 +29,14 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         },
         {
           "name": "department",
@@ -114,24 +109,17 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         }
       ],
-      "indexes": [
-        "CREATE INDEX idx_approval_rules_approver ON approval_rules (approver)"
-      ]
+      "indexes": ["CREATE INDEX idx_approval_rules_approver ON approval_rules (approver)"]
     },
     {
       "name": "requests",
@@ -167,11 +155,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "pending",
-            "approved",
-            "rejected"
-          ]
+          "selectValues": ["pending", "approved", "rejected"]
         },
         {
           "name": "requester",
@@ -185,19 +169,14 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         }
       ],
       "indexes": [
