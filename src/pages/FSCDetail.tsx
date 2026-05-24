@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useFSCStore } from '@/stores/use-fsc-store'
 import { formatCurrency, formatDate, getTierInfo } from '@/lib/date-utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,6 +25,8 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft, CheckCircle, XCircle, AlertCircle, FileText, Download } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
+import pb from '@/lib/pocketbase/client'
+import { getRequest } from '@/services/requests'
 
 export default function FSCDetail() {
   const { id } = useParams()
@@ -35,39 +37,87 @@ export default function FSCDetail() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false)
   const [returnModalOpen, setReturnModalOpen] = useState(false)
   const [notes, setNotes] = useState('')
+  const [pbRequest, setPbRequest] = useState<any>(null)
 
-  if (!fsc) {
+  useEffect(() => {
+    if (id) {
+      getRequest(id)
+        .then(setPbRequest)
+        .catch(() => {})
+    }
+  }, [id])
+
+  if (!fsc && !pbRequest) {
     return <div className="p-8 text-center">FSC não encontrado.</div>
   }
 
-  const tierInfo = getTierInfo(fsc.totalValue)
+  // Fallback map real PB request to existing UI structure if local mock data is absent
+  const displayFsc = fsc || {
+    id: pbRequest?.id,
+    fscNo: pbRequest?.id?.slice(0, 6).toUpperCase(),
+    eventName: pbRequest?.title,
+    eventDate: pbRequest?.created,
+    location: '-',
+    centerOfCost: '-',
+    requester: pbRequest?.expand?.requester?.name || pbRequest?.requester,
+    audience: '-',
+    items: [
+      {
+        id: '1',
+        description: pbRequest?.description || 'Item Geral',
+        qtd: 1,
+        unitValue: pbRequest?.amount || 0,
+        total: pbRequest?.amount || 0,
+      },
+    ],
+    budgets: [],
+    totalValue: pbRequest?.amount || 0,
+    status: pbRequest?.status === 'pending' ? 'Em Aprovação (Dir. Op.)' : pbRequest?.status,
+    history: [
+      {
+        id: '1',
+        date: pbRequest?.created,
+        user: pbRequest?.expand?.requester?.name || 'Sistema',
+        action: 'Solicitação Criada',
+      },
+    ],
+  }
+
+  const tierInfo = getTierInfo(displayFsc.totalValue)
 
   // Define visibility of actions based on simple mock logic
   // In real app, this would check user roles
-  const canApprove = fsc.status.includes('Aprovação') || fsc.status === 'Pendente Financeiro'
+  const canApprove =
+    displayFsc.status.includes('Aprovação') || displayFsc.status === 'Pendente Financeiro'
 
   const handleApprove = () => {
-    let nextStatus = fsc.status
-    if (fsc.status === 'Pendente Financeiro') {
-      nextStatus = tierInfo.tier >= 3 ? 'Em Aprovação (Dir. Op.)' : 'Aprovado'
-    } else if (fsc.status === 'Em Aprovação (Dir. Op.)') {
-      nextStatus = tierInfo.tier === 4 ? 'Em Aprovação (Presidente)' : 'Aprovado'
-    } else if (fsc.status === 'Em Aprovação (Presidente)') {
-      nextStatus = 'Aprovado'
-    }
+    if (fsc) {
+      let nextStatus = displayFsc.status
+      if (displayFsc.status === 'Pendente Financeiro') {
+        nextStatus = tierInfo.tier >= 3 ? 'Em Aprovação (Dir. Op.)' : 'Aprovado'
+      } else if (displayFsc.status === 'Em Aprovação (Dir. Op.)') {
+        nextStatus = tierInfo.tier === 4 ? 'Em Aprovação (Presidente)' : 'Aprovado'
+      } else if (displayFsc.status === 'Em Aprovação (Presidente)') {
+        nextStatus = 'Aprovado'
+      }
 
-    updateFSCStatus(fsc.id, nextStatus as any, 'Aprovador Atual')
+      updateFSCStatus(displayFsc.id, nextStatus as any, 'Aprovador Atual')
+    }
     toast({ title: 'Aprovado', description: 'Solicitação avançou no fluxo.' })
   }
 
   const handleReject = () => {
-    updateFSCStatus(fsc.id, 'Reprovado', 'Aprovador Atual', notes)
+    if (fsc) {
+      updateFSCStatus(displayFsc.id, 'Reprovado', 'Aprovador Atual', notes)
+    }
     setRejectModalOpen(false)
     toast({ title: 'Reprovado', variant: 'destructive', description: 'Solicitação reprovada.' })
   }
 
   const handleReturn = () => {
-    updateFSCStatus(fsc.id, 'Devolvido', 'Aprovador Atual', notes)
+    if (fsc) {
+      updateFSCStatus(displayFsc.id, 'Devolvido', 'Aprovador Atual', notes)
+    }
     setReturnModalOpen(false)
     toast({ title: 'Devolvido', description: 'Solicitação devolvida para ajustes.' })
   }
@@ -85,8 +135,8 @@ export default function FSCDetail() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-primary flex items-center gap-3">
-            FSC {fsc.fscNo}
-            <StatusBadge status={fsc.status} />
+            FSC {displayFsc.fscNo}
+            <StatusBadge status={displayFsc.status as any} />
           </h1>
           <p className="text-muted-foreground mt-1">
             Alçada: <strong className="text-foreground">{tierInfo.label}</strong> (Prazo:{' '}
@@ -126,27 +176,27 @@ export default function FSCDetail() {
             <CardContent className="p-6 grid grid-cols-2 gap-y-4">
               <div>
                 <p className="text-sm text-muted-foreground">Nome do Evento</p>
-                <p className="font-medium text-foreground">{fsc.eventName}</p>
+                <p className="font-medium text-foreground">{displayFsc.eventName}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Data do Evento</p>
-                <p className="font-medium text-foreground">{formatDate(fsc.eventDate)}</p>
+                <p className="font-medium text-foreground">{formatDate(displayFsc.eventDate)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Local</p>
-                <p className="font-medium text-foreground">{fsc.location}</p>
+                <p className="font-medium text-foreground">{displayFsc.location}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Centro de Custo</p>
-                <p className="font-medium text-foreground">{fsc.centerOfCost}</p>
+                <p className="font-medium text-foreground">{displayFsc.centerOfCost}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Solicitante</p>
-                <p className="font-medium text-foreground">{fsc.requester}</p>
+                <p className="font-medium text-foreground">{displayFsc.requester}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Público</p>
-                <p className="font-medium text-foreground">{fsc.audience || '-'}</p>
+                <p className="font-medium text-foreground">{displayFsc.audience || '-'}</p>
               </div>
             </CardContent>
           </Card>
@@ -166,7 +216,7 @@ export default function FSCDetail() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {fsc.items.map((item) => (
+                  {displayFsc.items.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell className="pl-6">{item.description}</TableCell>
                       <TableCell>{item.qtd}</TableCell>
@@ -184,7 +234,7 @@ export default function FSCDetail() {
                       Total Geral:
                     </TableCell>
                     <TableCell className="text-right pr-6 font-bold text-lg text-primary">
-                      {formatCurrency(fsc.totalValue)}
+                      {formatCurrency(displayFsc.totalValue)}
                     </TableCell>
                   </TableRow>
                 </TableBody>
@@ -192,35 +242,69 @@ export default function FSCDetail() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-subtle border-transparent">
-            <CardHeader className="bg-accent/30 border-b">
-              <CardTitle className="text-lg">Orçamentos Apresentados</CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              {fsc.budgets.map((b, i) => (
-                <div
-                  key={b.id}
-                  className="flex items-center justify-between p-4 border rounded-md bg-accent/20"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-secondary/10 text-secondary flex items-center justify-center font-bold">
-                      {i + 1}
+          {pbRequest?.attachments?.length > 0 && (
+            <Card className="shadow-subtle border-transparent">
+              <CardHeader className="bg-accent/30 border-b">
+                <CardTitle className="text-lg">Documentos Anexos</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6 space-y-4">
+                {pbRequest.attachments.map((filename: string) => (
+                  <div
+                    key={filename}
+                    className="flex items-center justify-between p-4 border rounded-md bg-accent/20"
+                  >
+                    <div className="flex items-center gap-4">
+                      <FileText className="h-8 w-8 text-muted-foreground" />
+                      <p className="font-medium">{filename}</p>
                     </div>
-                    <div>
-                      <p className="font-medium">{b.provider}</p>
-                      <p className="text-sm text-muted-foreground">CNPJ: {b.cnpj}</p>
-                    </div>
-                  </div>
-                  <div className="text-right flex items-center gap-4">
-                    <div className="font-bold">{formatCurrency(b.totalValue)}</div>
-                    <Button variant="ghost" size="icon" className="text-secondary">
-                      <Download className="h-4 w-4" />
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={pb.files.getUrl(pbRequest, filename)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Baixar Anexo"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Baixar
+                      </a>
                     </Button>
                   </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {displayFsc.budgets && displayFsc.budgets.length > 0 && (
+            <Card className="shadow-subtle border-transparent">
+              <CardHeader className="bg-accent/30 border-b">
+                <CardTitle className="text-lg">Orçamentos Apresentados</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6 space-y-4">
+                {displayFsc.budgets.map((b, i) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center justify-between p-4 border rounded-md bg-accent/20"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 rounded-full bg-secondary/10 text-secondary flex items-center justify-center font-bold">
+                        {i + 1}
+                      </div>
+                      <div>
+                        <p className="font-medium">{b.provider}</p>
+                        <p className="text-sm text-muted-foreground">CNPJ: {b.cnpj}</p>
+                      </div>
+                    </div>
+                    <div className="text-right flex items-center gap-4">
+                      <div className="font-bold">{formatCurrency(b.totalValue)}</div>
+                      <Button variant="ghost" size="icon" className="text-secondary">
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Sidebar info */}
@@ -231,7 +315,7 @@ export default function FSCDetail() {
             </CardHeader>
             <CardContent className="p-6">
               <div className="relative pl-6 border-l-2 border-accent space-y-6">
-                {fsc.history.map((evt, idx) => (
+                {displayFsc.history.map((evt, idx) => (
                   <div key={evt.id} className="relative">
                     <div className="absolute -left-[33px] h-4 w-4 rounded-full border-2 border-white bg-secondary"></div>
                     <p className="text-sm font-semibold">{evt.action}</p>
@@ -249,7 +333,7 @@ export default function FSCDetail() {
             </CardContent>
           </Card>
 
-          {fsc.status === 'Aprovado' && (
+          {displayFsc.status === 'Aprovado' && (
             <Card className="shadow-subtle border-transparent bg-success/5 border-success/20">
               <CardHeader>
                 <CardTitle className="text-lg text-success">Pós-Evento</CardTitle>

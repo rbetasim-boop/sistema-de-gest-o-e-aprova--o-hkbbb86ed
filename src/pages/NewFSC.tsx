@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,19 +16,42 @@ export default function NewFSC() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
+  const [attachments, setAttachments] = useState<File[]>([])
   const [isLoading, setIsLoading] = useState(false)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files)
+      const validFiles = files.filter((f) => f.size <= 5242880) // 5MB limit
+      if (validFiles.length < files.length) {
+        toast({
+          title: 'Aviso',
+          description: 'Alguns arquivos excedem 5MB e foram ignorados.',
+          variant: 'destructive',
+        })
+      }
+      setAttachments((prev) => [...prev, ...validFiles])
+    }
+    e.target.value = ''
+  }
+
+  const removeFile = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     try {
-      await createRequest({
-        title,
-        description,
-        amount: Number(amount),
-        status: 'pending',
-        requester: user.id,
-      })
+      const formData = new FormData()
+      formData.append('title', title)
+      formData.append('description', description)
+      formData.append('amount', amount.toString())
+      formData.append('status', 'pending')
+      formData.append('requester', user.id)
+      attachments.forEach((file) => formData.append('attachments', file))
+
+      await createRequest(formData)
       toast({ title: 'Sucesso', description: 'Solicitação criada com sucesso.' })
       navigate('/')
     } catch (err) {
@@ -71,6 +95,42 @@ export default function NewFSC() {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />
+            </div>
+            <div className="space-y-2 pt-2">
+              <Label>Anexar Orçamentos (Máx. 5MB por arquivo)</Label>
+              <Input
+                type="file"
+                multiple
+                onChange={handleFileChange}
+                className="cursor-pointer"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+              />
+              {attachments.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {attachments.map((file, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between text-sm p-2 bg-muted rounded-md"
+                    >
+                      <span className="truncate max-w-[300px] font-medium text-muted-foreground">
+                        {file.name}{' '}
+                        <span className="font-normal opacity-70">
+                          ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                        </span>
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => removeFile(idx)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </CardContent>
           <CardFooter className="flex justify-end gap-2 bg-muted/20 border-t mt-4 p-4">
