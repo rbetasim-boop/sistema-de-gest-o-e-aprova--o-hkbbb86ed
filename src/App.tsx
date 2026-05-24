@@ -11,6 +11,8 @@ import MyRequests from './pages/MyRequests'
 import Pending from './pages/Pending'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import { FSCProvider } from './stores/use-fsc-store'
 import { AuthProvider, useAuth } from './hooks/use-auth'
 
@@ -30,6 +32,8 @@ const App = () => (
           <Sonner />
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<Layout />}>
                 <Route path="/" element={<Index />} />

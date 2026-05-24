@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { LogOut } from 'lucide-react'
 
 export default function Settings() {
-  const { signOut } = useAuth()
+  const { user, signOut } = useAuth()
 
   return (
     <div className="space-y-6">
@@ -30,7 +30,9 @@ export default function Settings() {
         <TabsList className="mb-4">
           <TabsTrigger value="geral">Geral</TabsTrigger>
           <TabsTrigger value="alcadas">Gestão de Alçadas</TabsTrigger>
-          <TabsTrigger value="usuarios">Usuários</TabsTrigger>
+          {user?.role === 'Administrador do Sistema' && (
+            <TabsTrigger value="usuarios">Usuários</TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="geral" className="p-8 border rounded-xl bg-card shadow-sm text-center">
           <h3 className="text-lg font-medium">Configurações Gerais</h3>
@@ -39,9 +41,11 @@ export default function Settings() {
         <TabsContent value="alcadas" className="m-0">
           <ApprovalLimits />
         </TabsContent>
-        <TabsContent value="usuarios" className="m-0">
-          <UserManagement />
-        </TabsContent>
+        {user?.role === 'Administrador do Sistema' && (
+          <TabsContent value="usuarios" className="m-0">
+            <UserManagement />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )
